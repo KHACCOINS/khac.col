@@ -94,27 +94,5 @@ contract KharYsmaCoins is
         emit PriceUpdated(currentPrice);
     }
 
-    /// @dev Internal transfer function with fee and liquidity logic
-    function _transfer(address from, address to, uint256 amount) 
-        private 
-        override(ERC20Upgradeable) 
-    {
-        uint256 fee = (amount * OWNER_SHARE_PERCENT) / 100;
-        uint256 liquidityShare = (fee * LIQUIDITY_SHARE_PERCENT) / 100;
-        uint256 amountAfterFee = amount - fee;
-
-        super._transfer(from, to, amountAfterFee);
-        super._transfer(from, owner(), fee - liquidityShare);
-        super._transfer(from, address(this), liquidityShare);
-    }
-
-    /// @dev Enforce transfer restrictions for paused state
-    function _beforeTokenTransfer(address from, address to, uint256 amount) 
-        private 
-        override(ERC20Upgradeable, ERC20PausableUpgradeable) 
-    {
-        super._beforeTokenTransfer(from, to, amount);
-    }
-
     receive() external payable {}
 }
