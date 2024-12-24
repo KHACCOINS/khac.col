@@ -10,69 +10,83 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 /// @custom:security-contact notairebtc@yahoo.fr
 contract KharYsmaCoins is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, ERC20PausableUpgradeable, OwnableUpgradeable, ERC20PermitUpgradeable {
-    uint256 public constant PRICE_FLOOR = 165100000000000000; // 0.1651 ETH in WEI
-    uint256 public constant TOTAL_SUPPLY = 10_000_000 * 10 ** 18; // 10 million tokens
-    uint256 public constant TRANSACTION_FEE_PERCENT = 10; // 10% transaction fee
-    uint256 public constant OWNER_SHARE_PERCENT = 60; // 60% of the fee to owner
-    uint256 public constant LIQUIDITY_SHARE_PERCENT = 40; // 40% of the fee to liquidity pool
+    uint256 public constant PRICE_FLOOR = 550 * 10**18; // Price floor in USD
+    uint256 public constant TOTAL_SUPPLY = 10000000 * 10 ** 18; // Total supply
+    uint256 public constant OWNER_SHARE_PERCENT = 10;
+    uint256 public constant LIQUIDITY_SHARE_PERCENT = 40;
 
-    uint256 public priceFloorBalance;
+    event PriceUpdated(uint256 currentPrice);
+    event Withdrawn(address indexed to, uint256 amount);
 
-    event PriceUpdated(uint256 newPrice);
-    event FeeDistributed(uint256 ownerShare, uint256 liquidityShare);
-
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
+    /// @notice Initializes the contract with initial owner and mints the total supply.
+    /// @param initialOwner The address of the initial owner.
     function initialize(address initialOwner) initializer public {
-        __ERC20_init("KharYsma Coins", "KHAC");
+        __ERC20_init("kharYsma Coins", "KHAC");
         __ERC20Burnable_init();
         __ERC20Pausable_init();
         __Ownable_init();
-        __ERC20Permit_init("KharYsma Coins");
+        __ERC20Permit_init("kharYsma Coins");
 
-        _mint(initialOwner, TOTAL_SUPPLY);
-        priceFloorBalance = PRICE_FLOOR;
+        require(initialOwner != address(0), "Invalid owner address");
+        _transferOwnership(initialOwner);
+        _mint(msg.sender, TOTAL_SUPPLY);
     }
 
+    /// @notice Pauses all token transfers.
     function pause() public onlyOwner {
         _pause();
     }
 
+    /// @notice Unpauses all token transfers.
     function unpause() public onlyOwner {
         _unpause();
     }
 
+    /// @notice Mints new tokens.
+    /// @param to The address to receive the minted tokens.
+    /// @param amount The amount of tokens to mint.
     function mint(address to, uint256 amount) public onlyOwner {
         _mint(to, amount);
     }
 
+    /// @notice Withdraws ETH from the contract.
+    /// @param to The address to send the withdrawn ETH.
+    /// @param amount The amount of ETH to withdraw.
+    function withdraw(address payable to, uint256 amount) public onlyOwner {
+        require(to != address(0), "Invalid address");
+        require(amount <= address(this).balance, "Insufficient balance");
+        to.transfer(amount);
+        emit Withdrawn(to, amount);
+    }
+
+    /// @notice Updates the token price and ensures it stays above the price floor.
+    function updatePrice() public {
+        uint256 currentPrice = address(this).balance / TOTAL_SUPPLY;
+        if (currentPrice < PRICE_FLOOR) {
+            currentPrice = PRICE_FLOOR;
+        }
+        emit PriceUpdated(currentPrice);
+    }
+
+    /// @notice Overrides the hook to include pausable functionality.
+    function _beforeTokenTransfer(address from, address to, uint256 amount)
+        internal
+        override(ERC20Upgradeable, ERC20PausableUpgradeable)
+    {
+        super._beforeTokenTransfer(from, to, amount);
+    }
+
+    /// @notice Ensures the total supply remains constant by minting tokens equal to the amount burned.
     function burn(uint256 amount) public override {
         super.burn(amount);
-        _mint(owner(), amount); // Maintain total supply by minting equivalent amount to owner
+        _mint(owner(), amount);
     }
 
-    function _transfer(address from, address to, uint256 amount) internal override {
-        require(balanceOf(from) >= amount, "Insufficient balance");
-
-        uint256 fee = (amount * TRANSACTION_FEE_PERCENT) / 100;
-        uint256 ownerShare = (fee * OWNER_SHARE_PERCENT) / 100;
-        uint256 liquidityShare = fee - ownerShare;
-        uint256 amountAfterFee = amount - fee;
-
-        super._transfer(from, to, amountAfterFee);
-        super._transfer(from, owner(), ownerShare);
-        priceFloorBalance += liquidityShare;
-
-        emit FeeDistributed(ownerShare, liquidityShare);
-        emit PriceUpdated(getTokenPrice());
-    }
-
-    function getTokenPrice() public view returns (uint256) {
-        uint256 currentPrice = address(this).balance / TOTAL_SUPPLY;
-        return currentPrice >= PRICE_FLOOR ? currentPrice : PRICE_FLOOR;
-    }
-
+    /// @notice Receives Ether.
     receive() external payable {}
 }
