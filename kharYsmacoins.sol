@@ -1,110 +1,122 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.22;
+pragma solidity 0.8.22;
 
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC20BurnableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import {ERC20PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
 import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
-/// @title KharYsmaCoins
+/// @title KharYsma Coins (KHAC)
+/// @notice Token with built-in market making, price floor stabilization, and owner fees
 /// @custom:security-contact notairebtc@yahoo.fr
-contract KharYsmaCoins is
-    ERC20Upgradeable,
-    ERC20BurnableUpgradeable,
-    ERC20PausableUpgradeable,
-    OwnableUpgradeable,
-    ERC20PermitUpgradeable,
-    ReentrancyGuard
+contract KharYsmaCoins is 
+    ERC20Upgradeable, 
+    ERC20BurnableUpgradeable, 
+    ERC20PausableUpgradeable, 
+    OwnableUpgradeable, 
+    ERC20PermitUpgradeable, 
+    ReentrancyGuardUpgradeable 
 {
-    using Address for address payable;
+    // Constants
+    uint256 public constant PRICE_FLOOR = 550 * 10 ** 18; // Price floor in USD (converted to Wei equivalent later)
+    uint256 public constant TOTAL_SUPPLY_CAP = 10_000_000 * 10 ** 18; // 10 million tokens
+    uint256 public constant OWNER_SHARE_PERCENT = 10; // 10% transaction fee
+    uint256 public constant LIQUIDITY_SHARE_PERCENT = 40; // 40% of fee to liquidity pool
 
-    uint256 public constant PRICE_FLOOR = 550 ether; // Floor price in USD
-    uint256 public totalSupplyCap;
-    uint256 public ownerSharePercent;
-    uint256 public liquiditySharePercent;
-
-    event PriceUpdated(uint256 newPrice);
-    event Withdrawn(address indexed recipient, uint256 amount);
+    // Events
+    event PriceUpdated(uint256 indexed newPrice);
+    event Withdrawn(address indexed to, uint256 amount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address initialOwner) external initializer {
+    /// @notice Initialize the contract with the owner and initial supply
+    /// @param initialOwner The address of the owner
+    function initialize(address initialOwner) 
+        initializer 
+        external 
+    {
+        require(initialOwner != address(0), "Invalid owner address");
+
         __ERC20_init("KharYsma Coins", "KHAC");
         __ERC20Burnable_init();
         __ERC20Pausable_init();
         __Ownable_init();
         __ERC20Permit_init("KharYsma Coins");
+        __ReentrancyGuard_init();
 
-        require(initialOwner != address(0), "Invalid owner address");
-        transferOwnership(initialOwner);
-
-        totalSupplyCap = 10000000 * 10 ** decimals();
-        ownerSharePercent = 10;
-        liquiditySharePercent = 40;
-
-        _mint(msg.sender, totalSupplyCap);
+        _mint(initialOwner, TOTAL_SUPPLY_CAP);
     }
 
+    /// @notice Pause the contract (only owner)
     function pause() external onlyOwner {
         _pause();
     }
 
+    /// @notice Unpause the contract (only owner)
     function unpause() external onlyOwner {
         _unpause();
     }
 
+    /// @notice Mint new tokens (only owner, respects total supply cap)
+    /// @param to Address to mint tokens to
+    /// @param amount Amount of tokens to mint
     function mint(address to, uint256 amount) external onlyOwner {
-        require(totalSupply() + amount <= totalSupplyCap, "Exceeds total supply cap");
+        require(totalSupply() + amount <= TOTAL_SUPPLY_CAP, "Exceeds total supply cap");
         _mint(to, amount);
     }
 
-    function withdraw(address payable recipient, uint256 amount) 
+    /// @notice Withdraw ETH from the contract (only owner)
+    /// @param to Address to withdraw to
+    /// @param amount Amount of ETH to withdraw
+    function withdraw(address payable to, uint256 amount) 
         external 
         onlyOwner 
-        nonReentrant
+        nonReentrant 
     {
-        require(recipient != address(0), "Invalid address");
+        require(to != address(0), "Invalid address");
         require(amount <= address(this).balance, "Insufficient balance");
-        recipient.sendValue(amount);
-        emit Withdrawn(recipient, amount);
+
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "Transfer failed");
+
+        emit Withdrawn(to, amount);
     }
 
-    function updatePrice(uint256 newPrice) external onlyOwner {
-        require(newPrice >= PRICE_FLOOR, "Price below floor");
-        emit PriceUpdated(newPrice);
+    /// @notice Update the price of the token and ensure it does not drop below the floor
+    function updatePrice() external {
+        uint256 currentPrice = address(this).balance / totalSupply();
+        require(currentPrice >= PRICE_FLOOR, "Price below floor");
+        emit PriceUpdated(currentPrice);
     }
 
-    /// @notice Override _beforeTokenTransfer for pausable functionality
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 amount
-    ) internal override(ERC20Upgradeable, ERC20PausableUpgradeable) {
+    /// @dev Overriding the internal transfer function to apply fees and liquidity allocation
+    function _transfer(address from, address to, uint256 amount) 
+        internal 
+        override(ERC20Upgradeable) 
+    {
+        require(balanceOf(from) >= amount, "Insufficient balance");
+
+        uint256 fee = (amount * OWNER_SHARE_PERCENT) / 100;
+        uint256 liquidityShare = (fee * LIQUIDITY_SHARE_PERCENT) / 100;
+        uint256 amountAfterFee = amount - fee;
+
+        super._transfer(from, to, amountAfterFee);
+        super._transfer(from, owner(), fee - liquidityShare);
+        super._transfer(from, address(this), liquidityShare);
+    }
+
+    /// @dev Ensures token transfers respect paused state
+    function _beforeTokenTransfer(address from, address to, uint256 amount) 
+        internal 
+        override(ERC20Upgradeable, ERC20PausableUpgradeable) 
+    {
         super._beforeTokenTransfer(from, to, amount);
     }
 
-    /// @notice Implement market making logic
-    function automaticMarketMaking(address to, uint256 amount) internal {
-        uint256 ownerShare = (amount * ownerSharePercent) / 100;
-        uint256 liquidityShare = (amount * liquiditySharePercent) / 100;
-
-        _transfer(msg.sender, owner(), ownerShare);
-        _transfer(msg.sender, address(this), liquidityShare);
-    }
-
-    /// @notice Override transfer to include market making
-    function _transfer(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) internal override {
-        super._transfer(sender, recipient, amount);
-        automaticMarketMaking(recipient, amount);
-    }
+    receive() external payable {}
 }
