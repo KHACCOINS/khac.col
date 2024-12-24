@@ -20,10 +20,10 @@ contract KharYsmaCoins is
     ReentrancyGuardUpgradeable 
 {
     // Constants
-    uint256 public constant PRICE_FLOOR = 550 * 10 ** 18; // Price floor in USD (converted to Wei equivalent later)
-    uint256 public constant TOTAL_SUPPLY_CAP = 10_000_000 * 10 ** 18; // 10 million tokens
-    uint256 public constant OWNER_SHARE_PERCENT = 10; // 10% transaction fee
-    uint256 public constant LIQUIDITY_SHARE_PERCENT = 40; // 40% of fee to liquidity pool
+    uint256 public constant PRICE_FLOOR = 550 * 10 ** 18;
+    uint256 public constant TOTAL_SUPPLY_CAP = 10_000_000 * 10 ** 18;
+    uint256 public constant OWNER_SHARE_PERCENT = 10;
+    uint256 public constant LIQUIDITY_SHARE_PERCENT = 40;
 
     // Events
     event PriceUpdated(uint256 indexed newPrice);
@@ -94,9 +94,9 @@ contract KharYsmaCoins is
         emit PriceUpdated(currentPrice);
     }
 
-    /// @dev Overriding the internal transfer function to apply fees and liquidity allocation
+    /// @dev Internal transfer function with fee and liquidity logic
     function _transfer(address from, address to, uint256 amount) 
-        internal 
+        private 
         override(ERC20Upgradeable) 
     {
         require(balanceOf(from) >= amount, "Insufficient balance");
@@ -110,9 +110,9 @@ contract KharYsmaCoins is
         super._transfer(from, address(this), liquidityShare);
     }
 
-    /// @dev Ensures token transfers respect paused state
+    /// @dev Enforce transfer restrictions for paused state
     function _beforeTokenTransfer(address from, address to, uint256 amount) 
-        internal 
+        private 
         override(ERC20Upgradeable, ERC20PausableUpgradeable) 
     {
         super._beforeTokenTransfer(from, to, amount);
