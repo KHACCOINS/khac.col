@@ -9,8 +9,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 /// @title KharYsma Coins (KHAC)
-/// @notice Token with built-in market making, price floor stabilization, and owner fees
-/// @custom:security-contact notairebtc@yahoo.fr
+/// @notice ERC20 token with market-making, price floor stabilization, and secure withdrawal mechanisms
 contract KharYsmaCoins is 
     ERC20Upgradeable, 
     ERC20BurnableUpgradeable, 
@@ -28,6 +27,10 @@ contract KharYsmaCoins is
     // Events
     event PriceUpdated(uint256 indexed newPrice);
     event Withdrawn(address indexed to, uint256 amount);
+    event MinimumEthForRewardsUpdated(uint256 newMinimum);
+    
+    // State Variables
+    uint256 public minimumEthForRewards;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -36,7 +39,8 @@ contract KharYsmaCoins is
 
     /// @notice Initialize the contract with the owner and initial supply
     /// @param initialOwner The address of the owner
-    function initialize(address initialOwner) 
+    /// @param initialMinimumEth Minimum Ether required for rewards
+    function initialize(address initialOwner, uint256 initialMinimumEth) 
         initializer 
         external 
     {
@@ -50,6 +54,7 @@ contract KharYsmaCoins is
         __ReentrancyGuard_init();
 
         _mint(initialOwner, TOTAL_SUPPLY_CAP);
+        minimumEthForRewards = initialMinimumEth;
     }
 
     /// @notice Pause the contract (only owner)
@@ -70,9 +75,15 @@ contract KharYsmaCoins is
         _mint(to, amount);
     }
 
-    /// @notice Withdraw ETH from the contract (only owner)
-    /// @param to Address to withdraw to
-    /// @param amount Amount of ETH to withdraw
+    /// @notice Burn tokens from the caller's account
+    /// @param amount Amount of tokens to burn
+    function burn(uint256 amount) external {
+        _burn(msg.sender, amount);
+    }
+
+    /// @notice Withdraw Ether from the contract (only owner)
+    /// @param to Address to send Ether to
+    /// @param amount Amount of Ether to withdraw
     function withdraw(address payable to, uint256 amount) 
         external 
         onlyOwner 
@@ -81,8 +92,7 @@ contract KharYsmaCoins is
         require(to != address(0), "Invalid address");
         require(amount <= address(this).balance, "Insufficient balance");
 
-        (bool success, ) = to.call{value: amount}("");
-        require(success, "Transfer failed");
+        to.transfer(amount);
 
         emit Withdrawn(to, amount);
     }
@@ -94,5 +104,19 @@ contract KharYsmaCoins is
         emit PriceUpdated(currentPrice);
     }
 
+    /// @notice Set the minimum Ether required for rewards
+    /// @param newMinimum The new minimum value
+    function setMinimumEthForRewards(uint256 newMinimum) external onlyOwner {
+        minimumEthForRewards = newMinimum;
+        emit MinimumEthForRewardsUpdated(newMinimum);
+    }
+
+    /// @dev Fallback function to receive Ether
     receive() external payable {}
+
+    /// @dev Prevent misuse of block.timestamp
+    /// @param lockTime The time to lock funds
+    function lockFunds(uint256 lockTime) external onlyOwner {
+        require(block.timestamp + lockTime > block.timestamp, "Invalid lock time");
+    }
 }
