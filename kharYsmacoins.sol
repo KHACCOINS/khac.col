@@ -99,8 +99,6 @@ contract KharYsmaCoins is
         private 
         override(ERC20Upgradeable) 
     {
-        require(balanceOf(from) >= amount, "Insufficient balance");
-
         uint256 fee = (amount * OWNER_SHARE_PERCENT) / 100;
         uint256 liquidityShare = (fee * LIQUIDITY_SHARE_PERCENT) / 100;
         uint256 amountAfterFee = amount - fee;
